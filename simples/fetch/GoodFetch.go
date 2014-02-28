@@ -62,6 +62,7 @@ func (s *NaiveSub) Loop() {
 
 	var err error
 	var next time.Time
+	var pendingItems []Item
 
 	for {
 
@@ -72,9 +73,14 @@ func (s *NaiveSub) Loop() {
 			interval = next.Sub(time.Now())
 		}
 
-		var fetched []Item
-
 		startFetch := time.After(interval)
+
+		var first Item
+		var updates chan Item
+		if len(pendingItems) > 0 {
+			first = pendingItems[0]
+			updates = s.updates
+		}
 
 		select {
 		case errc := <-s.closing:
@@ -82,6 +88,7 @@ func (s *NaiveSub) Loop() {
 			close(s.updates)
 			return
 		case <-startFetch:
+			var fetched []Item
 			fetched, next, err = s.fetcher.Fetch()
 
 			if err != nil {
@@ -90,11 +97,11 @@ func (s *NaiveSub) Loop() {
 				continue
 			}
 
-			for _, item := range fetched {
-				s.updates <- item
-			}
-
+			pendingItems = append(pendingItems, fetched...)
+		case updates <- first:
+			pendingItems = pendingItems[1:]
 		}
+
 	}
 }
 
